@@ -481,52 +481,54 @@ SQL.Row.prototype.enter = function(e) {
 SQL.Relation = OZ.Class().extend(SQL.Visual);
 SQL.Relation._counter = 0;
 SQL.Relation.prototype.init = function(owner, row1, row2) {
+	this.constructor._counter++;
 	this.owner = owner;
 	this.row1 = row1;
 	this.row2 = row2;
-	this.color = "#000";
 	this.hidden = false;
 	SQL.Visual.prototype.init.apply(this);
-
-	/* if one of the rows already has relations, inherit color */
-	var all = row1.relations.concat(row2.relations);
-	if (all.length) { /* inherit */
-		this.color = all[0].getColor();
-	} else if (CONFIG.RELATION_COLORS) { /* pick next */
-		this.constructor._counter++;
-		var colorIndex = this.constructor._counter - 1;
-		this.color = CONFIG.RELATION_COLORS[colorIndex % CONFIG.RELATION_COLORS.length];
-	}
-
+	
 	this.row1.addRelation(this);
 	this.row2.addRelation(this);
+	
 	this.dom = [];
+	if (CONFIG.RELATION_COLORS) {
+		var colorIndex = this.constructor._counter - 1;
+		var color = CONFIG.RELATION_COLORS[colorIndex % CONFIG.RELATION_COLORS.length];
+	} else {
+		var color = "#000";
+	}
 	
 	if (this.owner.vector) {
 		var path = document.createElementNS(this.owner.svgNS, "path");
-		path.setAttribute("stroke", this.color);
+		path.setAttribute("stroke", color);
 		path.setAttribute("stroke-width", CONFIG.RELATION_THICKNESS);
 		path.setAttribute("fill", "none");
 		this.owner.dom.svg.appendChild(path);
 		this.dom.push(path);
+		
+		//circle 
+		var circle = document.createElementNS(this.owner.svgNS, "circle");
+		circle.setAttribute("stroke", color);
+		circle.setAttribute("stroke-width", CONFIG.RELATION_THICKNESS);
+		circle.setAttribute("fill", "black");
+		circle.setAttribute("r", "3");
+		this.owner.dom.svg.appendChild(circle);
+		this.dom.push(circle);
 	} else {
 		for (var i=0;i<3;i++) {
-			var div = OZ.DOM.elm("div",{position:"absolute",className:"relation",backgroundColor:this.color});
+			var div = OZ.DOM.elm("div",{position:"absolute",className:"relation",backgroundColor:color});
 			this.dom.push(div);
 			if (i & 1) { /* middle */
-				OZ.Style.set(div, {width:CONFIG.RELATION_THICKNESS+"px"});
+				OZ.Style.set(div,{width:CONFIG.RELATION_THICKNESS+"px"});
 			} else { /* first & last */
-				OZ.Style.set(div, {height:CONFIG.RELATION_THICKNESS+"px"});
+				OZ.Style.set(div,{height:CONFIG.RELATION_THICKNESS+"px"});
 			}
 			this.owner.dom.container.appendChild(div);
 		}
 	}
 	
 	this.redraw();
-}
-
-SQL.Relation.prototype.getColor = function() {
-	return this.color;
 }
 
 SQL.Relation.prototype.show = function() {
@@ -543,11 +545,14 @@ SQL.Relation.prototype.hide = function() {
 	}
 }
 
-SQL.Relation.prototype.redrawNormal = function(p1, p2, half) {
+SQL.Relation.prototype.redrawNormal = function(p1, p2, half, pChild) {
 	if (this.owner.vector) {
 		var str = "M "+p1[0]+" "+p1[1]+" C "+(p1[0] + half)+" "+p1[1]+" ";
 		str += (p2[0]-half)+" "+p2[1]+" "+p2[0]+" "+p2[1];
 		this.dom[0].setAttribute("d",str);
+		//circle 
+		this.dom[1].setAttribute("cx", pChild[0]);
+		this.dom[1].setAttribute("cy", pChild[1]);
 	} else {
 		this.dom[0].style.left = p1[0]+"px";
 		this.dom[0].style.top = p1[1]+"px";
@@ -563,11 +568,14 @@ SQL.Relation.prototype.redrawNormal = function(p1, p2, half) {
 	}
 }
 
-SQL.Relation.prototype.redrawSide = function(p1, p2, x) {
+SQL.Relation.prototype.redrawSide = function(p1, p2, x, pChild) {
 	if (this.owner.vector) {
 		var str = "M "+p1[0]+" "+p1[1]+" C "+x+" "+p1[1]+" ";
 		str += x+" "+p2[1]+" "+p2[0]+" "+p2[1];
 		this.dom[0].setAttribute("d",str);
+		//circle 
+		this.dom[1].setAttribute("cx", pChild[0]);
+		this.dom[1].setAttribute("cy", pChild[1]);
 	} else {
 		this.dom[0].style.left = Math.min(x,p1[0])+"px";
 		this.dom[0].style.top = p1[1]+"px";
@@ -600,17 +608,21 @@ SQL.Relation.prototype.redraw = function() { /* draw connector */
 	
 	var p1 = [0,0];
 	var p2 = [0,0];
-	
+	var pChild;
 	if (r1 < l2 || r2 < l1) { /* between tables */
 		if (Math.abs(r1 - l2) < Math.abs(r2 - l1)) {
 			p1 = [r1,t1];
 			p2 = [l2,t2];
+			pChild = p2; 
+			pChild[0]-= 4;
 		} else {
 			p1 = [r2,t2];
 			p2 = [l1,t1];
+			pChild = p1; 
+			pChild[0]+= 4;
 		}
 		var half = Math.floor((p2[0] - p1[0])/2);
-		this.redrawNormal(p1, p2, half);
+		this.redrawNormal(p1, p2, half, pChild);
 	} else { /* next to tables */
 		var x = 0;
 		var l = 0;
@@ -618,12 +630,15 @@ SQL.Relation.prototype.redraw = function() { /* draw connector */
 			p1 = [l1,t1];
 			p2 = [l2,t2];
 			x = Math.min(l1,l2) - CONFIG.RELATION_SPACING;
+			pChild = p1;
 		} else { /* right of tables */
 			p1 = [r1,t1];
 			p2 = [r2,t2];
 			x = Math.max(r1,r2) + CONFIG.RELATION_SPACING;
+			pChild = p2;
+			pChild[0]+= 4;
 		}
-		this.redrawSide(p1, p2, x);
+		this.redrawSide(p1, p2, x, pChild);
 	} /* line next to tables */
 }
 
@@ -968,8 +983,6 @@ SQL.Table.prototype.move = function(e) { /* mousemove */
 	for (var i=0;i<t.active.length;i++) {
 		var x = t.x[i] + event.clientX;
 		var y = t.y[i] + event.clientY;
-		x = Math.max(x, 0);
-		y = Math.max(y, 0);
 		t.active[i].moveTo(x,y);
 	}
 }
@@ -1254,7 +1267,7 @@ SQL.IO.prototype.init = function(owner) {
 		container:OZ.$("io")
 	};
 
-	var ids = ["saveload","clientlocalsave", "clientsave", "clientlocalload", "clientlocallist","clientload", "clientsql", 
+	var ids = ["saveload","clientlocalsave", "clientsave", "clientlocalload","clientload", "clientsql", 
 				"quicksave", "serversave", "serverload",
 				"serverlist", "serverimport"];
 	for (var i=0;i<ids.length;i++) {
@@ -1288,7 +1301,6 @@ SQL.IO.prototype.init = function(owner) {
 	OZ.Event.add(this.dom.clientlocalsave, "click", this.bind(this.clientlocalsave));
 	OZ.Event.add(this.dom.clientsave, "click", this.bind(this.clientsave));
 	OZ.Event.add(this.dom.clientlocalload, "click", this.bind(this.clientlocalload));
-	OZ.Event.add(this.dom.clientlocallist, "click", this.bind(this.clientlocallist));
 	OZ.Event.add(this.dom.clientload, "click", this.bind(this.clientload));
 	OZ.Event.add(this.dom.clientsql, "click", this.bind(this.clientsql));
 	OZ.Event.add(this.dom.quicksave, "click", this.bind(this.quicksave));
@@ -1353,7 +1365,7 @@ SQL.IO.prototype.clientload = function() {
 		if (window.DOMParser) {
 			var parser = new DOMParser();
 			var xmlDoc = parser.parseFromString(xml, "text/xml");
-		} else if (window.ActiveXObject || "ActiveXObject" in window) {
+		} else if (window.ActiveXObject) {
 			var xmlDoc = new ActiveXObject("Microsoft.XMLDOM");
 			xmlDoc.loadXML(xml);
 		} else {
@@ -1378,9 +1390,8 @@ SQL.IO.prototype.clientlocalsave = function() {
 		return;
 	}
 
-	var key = prompt(_("serversaveprompt"), this._name);
-	if (key === null) { return; }
-	key = "wwwsqldesigner_databases_" + (key || "default");
+	var key = prompt(_("serversaveprompt"), this._name) || "default";
+	key = "wwwsqldesigner_databases_"+key;
 	
 	try {
 		localStorage.setItem(key, xml);
@@ -1398,9 +1409,8 @@ SQL.IO.prototype.clientlocalload = function() {
 		return;
 	}
 	
-	var key = prompt(_("serverloadprompt"), this._name);
-	if (key === null) { return; }
-	key = "wwwsqldesigner_databases_" + (key || "default");
+	var key = prompt(_("serverloadprompt"), this._name) || "default";
+	key = "wwwsqldesigner_databases_"+key;
 	
 	try {
 		var xml = localStorage.getItem(key);
@@ -1414,7 +1424,7 @@ SQL.IO.prototype.clientlocalload = function() {
 		if (window.DOMParser) {
 			var parser = new DOMParser();
 			var xmlDoc = parser.parseFromString(xml, "text/xml");
-		} else if (window.ActiveXObject || "ActiveXObject" in window) {
+		} else if (window.ActiveXObject) {
 			var xmlDoc = new ActiveXObject("Microsoft.XMLDOM");
 			xmlDoc.loadXML(xml);
 		} else {
@@ -1428,38 +1438,6 @@ SQL.IO.prototype.clientlocalload = function() {
 	this.fromXML(xmlDoc);
 }
 
-SQL.IO.prototype.clientlocallist = function() {
-    if (!window.localStorage) { 
-        alert("Sorry, your browser does not seem to support localStorage.");
-        return;
-    }
-    
-    /* --- Define some usefull vars --- */
-    var baseKeysName = "wwwsqldesigner_databases_";
-    var localLen = localStorage.length;
-    var data = "";
-    var schemasFound = false;
-    var code = 200;
-    
-    /* --- work --- */
-    try {
-        for (var i = 0; i< localLen; ++i) {
-            var key = localStorage.key(i);
-            if((new RegExp(baseKeysName)).test(key)) {
-                var result = key.substring(baseKeysName.length);
-                schemasFound = true;
-                data += result + "\n";
-            }
-        }
-        if (!schemasFound) {
-            throw new Error("No data available");
-        }
-    }  catch (e) {
-        alert("Error loading database names from localStorage! ("+e.message+")");
-        return;
-    }
-    this.listresponse(data, code);
-}
 
 SQL.IO.prototype.clientsql = function() {
 	var bp = this.owner.getOption("staticpath");
@@ -1480,7 +1458,7 @@ SQL.IO.prototype.finish = function(xslDoc) {
 			xsl.importStylesheet(xslDoc);
 			var result = xsl.transformToDocument(xmlDoc);
 			sql = result.documentElement.textContent;
-		} else if (window.ActiveXObject || "ActiveXObject" in window) {
+		} else if (window.ActiveXObject) {
 			var xmlDoc = new ActiveXObject("Microsoft.XMLDOM");
 			xmlDoc.loadXML(xml);
 			sql = xmlDoc.transformNode(xslDoc);
@@ -2658,7 +2636,7 @@ SQL.Designer.prototype.findNamedTable = function(name) { /* find row specified a
 
 SQL.Designer.prototype.toXML = function() {
 	var xml = '<?xml version="1.0" encoding="utf-8" ?>\n';
-	xml += '<!-- SQL XML created by WWW SQL Designer, https://github.com/ondras/wwwsqldesigner/ -->\n';
+	xml += '<!-- SQL XML created by WWW SQL Designer, http://code.google.com/p/wwwsqldesigner/ -->\n';
 	xml += '<!-- Active URL: ' + location.href + ' -->\n';
 	xml += '<sql>\n';
 	
@@ -2753,6 +2731,4 @@ SQL.Designer.prototype.getFKTypeFor = function(typeIndex) {
 	return this.fkTypeFor[typeIndex];
 }
 
-window.onbeforeunload = function(e) {
-	return ""; /* some browsers will show this text, some won't. */
-}
+OZ.Event.add(window, "beforeunload", function(e) { OZ.Event.prevent(e); return ""; });
